@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>格式小幫手 | Vibe Coding</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Import Map for React and Lucide -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.263.1"
+      }
+    }
+    </script>
+
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        /* Custom Scrollbar for the Help Modal */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useCallback } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { 
+          Wand2, 
+          Eraser, 
+          Quote, 
+          Copy, 
+          Check, 
+          RotateCcw, 
+          Sparkles,
+          Type,
+          Trash2,
+          ArrowUp,
+          WrapText,
+          User,
+          HelpCircle,
+          X,
+          Zap,
+          MessageSquarePlus // Added Icon for Voiceover mode
+        } from 'lucide-react';
+
+        function App() {
+          const [inputText, setInputText] = useState('');
+          const [mode, setMode] = useState('filter'); // 'filter', 'dialogue', or 'voiceover'
+          const [outputText, setOutputText] = useState('');
+          const [removeKeywords, setRemoveKeywords] = useState('');
+          const [copied, setCopied] = useState(false);
+          const [showHelp, setShowHelp] = useState(false);
+          
+          // Filter mode settings
+          const [removeNewlines, setRemoveNewlines] = useState(false);
+
+          // Dialogue mode settings
+          const [autoPunctuate, setAutoPunctuate] = useState(true);
+          const [useTraditionalQuotes, setUseTraditionalQuotes] = useState(true); // true: 「」, false: ""
+          const [speakerName, setSpeakerName] = useState(''); 
+          
+          // Voiceover mode settings (New)
+          // Default text changed to empty string as requested, logic handles fallback
+          const [interleaveText, setInterleaveText] = useState('');
+
+          // Magic button state
+          const [magicColor, setMagicColor] = useState(null);
+
+          // Escape regex special characters
+          const escapeRegExp = (string) => {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          };
+
+          // Main Processing Logic
+          const processText = useCallback(() => {
+            if (!inputText) {
+              setOutputText('');
+              return;
+            }
+
+            let result = inputText;
+            let keywordRemovesNewlines = false;
+
+            // 1. Common Logic: Remove Keywords (Applies to ALL modes)
+            if (removeKeywords.trim()) {
+              const keywords = removeKeywords.split(/[,，\s]+/).filter(k => k.trim() !== '');
+              
+              keywords.forEach(keyword => {
+                if (keyword === '\\n') {
+                  // Track if keywords imply newline removal
+                  keywordRemovesNewlines = true;
+                } else {
+                  const regex = new RegExp(escapeRegExp(keyword), 'g');
+                  result = result.replace(regex, '');
+                }
+              });
+            }
+
+            // Apply newline removal from keywords
+            if (keywordRemovesNewlines) {
+              result = result.replace(/\n/g, '');
+            }
+
+            // 2. Mode Specific Logic
+            if (mode === 'filter') {
+              // Filter Mode
+              if (removeNewlines && !keywordRemovesNewlines) {
+                result = result.replace(/\n/g, '');
+              }
+
+            } else if (mode === 'dialogue') {
+              // Dialogue Mode
+              let trimmed = result.trim();
+              
+              if (autoPunctuate) {
+                const endPunctuation = /[。！？.!?…~]$/;
+                if (!endPunctuation.test(trimmed) && trimmed.length > 0) {
+                  trimmed += '。';
+                }
+                trimmed = trimmed.replace(/\s+/g, '，');
+              }
+
+              if (trimmed.length > 0) {
+                let content = trimmed;
+                if (useTraditionalQuotes) {
+                  content = `「${trimmed}」`;
+                } else {
+                  content = `"${trimmed}"`;
+                }
+
+                if (speakerName.trim()) {
+                  result = `${speakerName.trim()}：${content}`;
+                } else {
+                  result = content;
+                }
+              } else {
+                result = '';
+              }
+
+            } else if (mode === 'voiceover') {
+              // Voiceover Mode (New)
+              // Split by newlines, trim empty lines, then join with the interleave text
+              const lines = result.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+              
+              if (lines.length > 0) {
+                // The requirement: "自動在每一行文字中間加入自訂文字，且自訂文字跟原本的文字中間要空一行"
+                // Structure: Line 1 \n\n InterleaveText \n\n Line 2
+                // Default fallback is 'super' if input is empty
+                const separator = `\n\n${interleaveText || 'super'}\n\n`;
+                result = lines.join(separator);
+              } else {
+                result = '';
+              }
+            }
+
+            setOutputText(result);
+          }, [inputText, mode, removeKeywords, removeNewlines, autoPunctuate, useTraditionalQuotes, speakerName, interleaveText]);
+
+          // Real-time processing
+          useEffect(() => {
+            processText();
+          }, [processText]);
+
+          // Copy to clipboard
+          const handleCopy = () => {
+            if (!outputText) return;
+            
+            const textArea = document.createElement("textarea");
+            textArea.value = outputText;
+            
+            textArea.style.position = "fixed";
+            textArea.style.left = "-9999px";
+            textArea.style.top = "0";
+            
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+
+            try {
+              const successful = document.execCommand('copy');
+              if (successful) {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }
+            } catch (err) {
+              console.error('Fallback: Oops, unable to copy', err);
+            }
+
+            document.body.removeChild(textArea);
+          };
+
+          // Reuse output as input for secondary processing
+          const handleReuse = () => {
+            if (!outputText) return;
+            setInputText(outputText);
+          };
+
+          const handleClear = () => {
+            setInputText('');
+            setOutputText('');
+          };
+
+          // Handle magic button click
+          const handleMagicClick = () => {
+            const colors = [
+              'bg-indigo-500', 'bg-pink-500', 'bg-purple-500', 'bg-blue-500', 
+              'bg-teal-500', 'bg-orange-500', 'bg-rose-500', 'bg-cyan-500',
+              'bg-emerald-500', 'bg-violet-500'
+            ];
+            
+            let defaultColor = 'bg-indigo-500';
+            if (mode === 'dialogue') defaultColor = 'bg-pink-500';
+            if (mode === 'voiceover') defaultColor = 'bg-emerald-500';
+
+            const currentColor = magicColor || defaultColor;
+            const availableColors = colors.filter(c => c !== currentColor);
+            const randomColor = availableColors[Math.floor(Math.random() * availableColors.length)];
+            setMagicColor(randomColor);
+          };
+
+          // Determine current theme color for borders/bg
+          const getThemeColor = () => {
+            if (mode === 'filter') return 'indigo';
+            if (mode === 'dialogue') return 'pink';
+            if (mode === 'voiceover') return 'emerald';
+            return 'indigo';
+          };
+
+          const theme = getThemeColor();
+
+          return (
+            <div className={`min-h-screen bg-gradient-to-br p-4 md:p-8 flex items-center justify-center font-sans relative transition-colors duration-500
+              ${mode === 'filter' ? 'from-indigo-500 via-purple-500 to-pink-500' : ''}
+              ${mode === 'dialogue' ? 'from-pink-500 via-rose-500 to-orange-500' : ''}
+              ${mode === 'voiceover' ? 'from-emerald-500 via-teal-500 to-cyan-500' : ''}
+            `}>
+              
+              {/* Help Modal Overlay */}
+              {showHelp && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/20 backdrop-blur-sm animate-in fade-in duration-200">
+                  <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
+                    <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                      <h2 className="text-xl font-bold text-slate-700 flex items-center gap-2">
+                        <Sparkles className="w-5 h-5 text-indigo-500" />
+                        功能使用指南
+                      </h2>
+                      <button 
+                        onClick={() => setShowHelp(false)}
+                        className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                    
+                    <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
+                      <div className="space-y-3">
+                        <h3 className="font-bold text-indigo-600 flex items-center gap-2">
+                          <Eraser className="w-4 h-4" /> 格式淨化 (Filter Mode)
+                        </h3>
+                        <p className="text-sm text-slate-600 leading-relaxed">
+                          專門用來清理雜亂的文字。你可以設定要移除的關鍵字（如口語贅字），或是開啟「移除換行」將斷裂的段落重新接合。
+                        </p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <h3 className="font-bold text-pink-600 flex items-center gap-2">
+                          <Quote className="w-4 h-4" /> 口白生成 (Dialogue Mode)
+                        </h3>
+                        <p className="text-sm text-slate-600 leading-relaxed">
+                          快速將文字轉為小說或劇本對話格式。自動補上標點、引號與語者標記。
+                        </p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <h3 className="font-bold text-emerald-600 flex items-center gap-2">
+                          <MessageSquarePlus className="w-4 h-4" /> 補口白 (Voiceover Mode)
+                        </h3>
+                        <p className="text-sm text-slate-600 leading-relaxed">
+                          逐行插入文字小幫手。輸入多行文字後，會自動在每一行中間插入您指定的「自訂文字」（預設為 super），並自動空一行，方便閱讀或填寫。
+                        </p>
+                      </div>
+
+                      <div className="space-y-3 border-t border-slate-100 pt-4">
+                        <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                          <Zap className="w-4 h-4" /> 進階工作流
+                        </h3>
+                        <p className="text-sm text-slate-600 leading-relaxed">
+                          點擊轉換結果上方的 <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 text-xs"><ArrowUp className="w-3 h-3"/> 繼續處理</span> 按鈕，可以將結果直接帶回輸入框。
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-center">
+                      <button 
+                        onClick={() => setShowHelp(false)}
+                        className="px-6 py-2 bg-slate-800 text-white rounded-xl text-sm font-medium hover:bg-slate-700 transition-colors"
+                      >
+                        開始使用
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Main Card */}
+              <div className="w-full max-w-4xl bg-white/90 backdrop-blur-xl shadow-2xl rounded-3xl overflow-hidden border border-white/50 flex flex-col md:flex-row min-h-[600px]">
+                
+                {/* Sidebar / Mode Switcher */}
+                <div className="w-full md:w-64 bg-slate-50/80 p-6 flex flex-col border-r border-slate-200/60">
+                  <div className={`flex items-center gap-2 mb-8 text-${theme}-600 transition-colors duration-500`}>
+                    <Sparkles className="w-6 h-6 animate-pulse" />
+                    <h1 className="text-xl font-bold tracking-tight">格式小幫手</h1>
+                  </div>
+
+                  <nav className="flex flex-col gap-3 space-y-1">
+                    <button
+                      onClick={() => setMode('filter')}
+                      className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 text-left ${
+                        mode === 'filter'
+                          ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 scale-105'
+                          : 'hover:bg-white text-slate-600 hover:shadow-sm'
+                      }`}
+                    >
+                      <Eraser className="w-5 h-5" />
+                      <span className="font-medium">格式淨化</span>
+                    </button>
+                    
+                    <button
+                      onClick={() => setMode('dialogue')}
+                      className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 text-left ${
+                        mode === 'dialogue'
+                          ? 'bg-pink-600 text-white shadow-lg shadow-pink-200 scale-105'
+                          : 'hover:bg-white text-slate-600 hover:shadow-sm'
+                      }`}
+                    >
+                      <Quote className="w-5 h-5" />
+                      <span className="font-medium">口白生成</span>
+                    </button>
+
+                    <button
+                      onClick={() => setMode('voiceover')}
+                      className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 text-left ${
+                        mode === 'voiceover'
+                          ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200 scale-105'
+                          : 'hover:bg-white text-slate-600 hover:shadow-sm'
+                      }`}
+                    >
+                      <MessageSquarePlus className="w-5 h-5" />
+                      <span className="font-medium">補口白</span>
+                    </button>
+
+                    <button
+                      onClick={() => setShowHelp(true)}
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white text-slate-600 hover:shadow-sm transition-all duration-300 text-left mt-2"
+                    >
+                      <HelpCircle className="w-5 h-5" />
+                      <span className="font-medium">使用說明</span>
+                    </button>
+                  </nav>
+
+                  <div className="mt-auto pt-6 border-t border-slate-200">
+                    <p className="text-xs text-slate-400 text-center">
+                      Vibe Coding Edition <br/> Made with ✨
+                    </p>
+                  </div>
+                </div>
+
+                {/* Main Content Area */}
+                <div className="flex-1 p-6 md:p-8 flex flex-col gap-6 overflow-y-auto">
+                  
+                  {/* Controls Area based on Mode */}
+                  <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+                    {mode === 'filter' && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                           <label className="text-sm font-semibold text-slate-500 flex items-center gap-2">
+                            <Trash2 className="w-4 h-4" />
+                            自訂移除字詞
+                          </label>
+                          
+                          <button
+                            onClick={() => setRemoveNewlines(!removeNewlines)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 border ${
+                              removeNewlines
+                                ? 'bg-indigo-100 text-indigo-700 border-indigo-200 shadow-sm'
+                                : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            <WrapText className="w-3.5 h-3.5" />
+                            {removeNewlines ? '已啟用：移除換行' : '移除換行符號'}
+                          </button>
+                        </div>
+
+                        <input
+                          type="text"
+                          value={removeKeywords}
+                          onChange={(e) => setRemoveKeywords(e.target.value)}
+                          placeholder="輸入要刪除的文字，用逗號分隔..."
+                          className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all text-slate-700 placeholder:text-slate-400"
+                        />
+                        <p className="text-xs text-slate-400">例如輸入：然後, 其實, 喔</p>
+                      </div>
+                    )}
+
+                    {mode === 'dialogue' && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold text-slate-500 flex items-center gap-2">
+                            <Wand2 className="w-4 h-4" />
+                            魔法設定
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-4">
+                          <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors">
+                            <input 
+                              type="checkbox" 
+                              checked={autoPunctuate}
+                              onChange={(e) => setAutoPunctuate(e.target.checked)}
+                              className="w-4 h-4 accent-pink-500 rounded cursor-pointer" 
+                            />
+                            <span className="text-sm text-slate-600">自動補全結尾標點</span>
+                          </label>
+                          
+                          <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors">
+                            <input 
+                              type="checkbox" 
+                              checked={useTraditionalQuotes}
+                              onChange={(e) => setUseTraditionalQuotes(e.target.checked)}
+                              className="w-4 h-4 accent-pink-500 rounded cursor-pointer" 
+                            />
+                            <span className="text-sm text-slate-600">使用直角引號 「」</span>
+                          </label>
+                        </div>
+
+                        <div className="pt-3 border-t border-slate-100 mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-sm font-semibold text-slate-500 flex items-center gap-2 mb-2">
+                              <User className="w-4 h-4" />
+                              語者標記
+                            </label>
+                            <input
+                              type="text"
+                              value={speakerName}
+                              onChange={(e) => setSpeakerName(e.target.value)}
+                              placeholder="例如：旁白、小明..."
+                              className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-pink-500/50 transition-all text-slate-700 placeholder:text-slate-400"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-sm font-semibold text-slate-500 flex items-center gap-2 mb-2">
+                              <Trash2 className="w-4 h-4" />
+                              同時移除字詞
+                            </label>
+                            <input
+                              type="text"
+                              value={removeKeywords}
+                              onChange={(e) => setRemoveKeywords(e.target.value)}
+                              placeholder="逗號分隔..."
+                              className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-pink-500/50 transition-all text-slate-700 placeholder:text-slate-400"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {mode === 'voiceover' && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold text-slate-500 flex items-center gap-2">
+                            <MessageSquarePlus className="w-4 h-4" />
+                            插入設定
+                          </span>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 gap-4">
+                          <div>
+                            <label className="text-sm font-semibold text-slate-500 flex items-center gap-2 mb-2">
+                              <Type className="w-4 h-4" />
+                              加入super
+                            </label>
+                            <input
+                              type="text"
+                              value={interleaveText}
+                              onChange={(e) => setInterleaveText(e.target.value)}
+                              placeholder=""
+                              className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all text-slate-700 placeholder:text-slate-400"
+                            />
+                            <p className="text-xs text-slate-400 mt-1">系統將自動在插入文字前後保留空行。</p>
+                          </div>
+                          
+                          {/* Reusing keyword removal for consistency */}
+                          <div className="pt-3 border-t border-slate-100">
+                             <label className="text-sm font-semibold text-slate-500 flex items-center gap-2 mb-2">
+                              <Trash2 className="w-4 h-4" />
+                              同時移除字詞
+                            </label>
+                            <input
+                              type="text"
+                              value={removeKeywords}
+                              onChange={(e) => setRemoveKeywords(e.target.value)}
+                              placeholder="逗號分隔..."
+                              className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all text-slate-700 placeholder:text-slate-400"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Input Area */}
+                  <div className="flex-1 flex flex-col gap-2">
+                    <div className="flex justify-between items-end px-1">
+                      <label className="text-sm font-semibold text-slate-500 flex items-center gap-2">
+                        <Type className="w-4 h-4" />
+                        原始文字
+                      </label>
+                      <button 
+                        onClick={handleClear}
+                        className="text-xs text-slate-400 hover:text-red-400 flex items-center gap-1 transition-colors"
+                      >
+                        <RotateCcw className="w-3 h-3" /> 清除
+                      </button>
+                    </div>
+                    <textarea
+                      value={inputText}
+                      onChange={(e) => setInputText(e.target.value)}
+                      placeholder="在此輸入或貼上文字..."
+                      className={`flex-1 w-full min-h-[150px] p-4 rounded-2xl bg-slate-50/50 border border-slate-200 focus:outline-none focus:ring-2 resize-none transition-all text-slate-700 placeholder:text-slate-300
+                        ${mode === 'filter' ? 'focus:ring-indigo-500/30' : ''}
+                        ${mode === 'dialogue' ? 'focus:ring-pink-500/30' : ''}
+                        ${mode === 'voiceover' ? 'focus:ring-emerald-500/30' : ''}
+                      `}
+                    />
+                  </div>
+
+                  {/* Arrow Separator (Visual - Now Interactive) */}
+                  <div className="flex justify-center -my-2 z-10">
+                    <button 
+                      onClick={handleMagicClick}
+                      className={`p-2 rounded-full shadow-sm text-white transition-all duration-500 hover:scale-110 active:scale-95 cursor-pointer ${
+                        magicColor 
+                          ? magicColor 
+                          : (mode === 'filter' ? 'bg-indigo-500' : mode === 'dialogue' ? 'bg-pink-500' : 'bg-emerald-600')
+                      }`}
+                      title="點我變色！"
+                    >
+                      <Wand2 className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Output Area */}
+                  <div className="flex-1 flex flex-col gap-2 relative group">
+                    <div className="flex justify-between items-end px-1">
+                      <label className="text-sm font-semibold text-slate-500">轉換結果</label>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleReuse}
+                          disabled={!outputText}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-300 ${
+                            !outputText 
+                              ? 'opacity-0 pointer-events-none' 
+                              : `bg-${theme}-50 text-${theme}-600 hover:bg-${theme}-100 border border-${theme}-200`
+                          }`}
+                          title="將結果設為輸入，以便進行二次處理"
+                        >
+                          <ArrowUp className="w-3 h-3" />
+                          繼續處理
+                        </button>
+                        <button
+                          onClick={handleCopy}
+                          disabled={!outputText}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-300 ${
+                            copied 
+                              ? 'bg-green-500 text-white' 
+                              : outputText 
+                                ? 'bg-slate-800 text-white hover:bg-slate-700 hover:shadow-lg' 
+                                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                          }`}
+                        >
+                          {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                          {copied ? '已複製！' : '複製結果'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className={`relative flex-1 w-full min-h-[150px] p-4 rounded-2xl border transition-all duration-500 flex items-start ${
+                      mode === 'filter' 
+                        ? 'bg-indigo-50/30 border-indigo-100 text-indigo-900' 
+                        : mode === 'dialogue' 
+                          ? 'bg-pink-50/30 border-pink-100 text-pink-900'
+                          : 'bg-emerald-50/30 border-emerald-100 text-emerald-900'
+                    }`}>
+                       {outputText ? (
+                         <p className="whitespace-pre-wrap leading-relaxed">{outputText}</p>
+                       ) : (
+                         <span className="text-slate-300 italic select-none">等待輸入...</span>
+                       )}
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
