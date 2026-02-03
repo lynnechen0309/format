@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>格式小幫手 | Vibe Coding</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Import Map for React and Lucide -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.263.1"
+      }
+    }
+    </script>
+
+    <!-- Babel for JSX (Fixed Version) -->
+    <script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
+
+    <style>
+        /* Custom Scrollbar */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 20px; }
+        
+        /* Hide number input arrows */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+          -webkit-appearance: none; margin: 0; 
+        }
+
+        /* Animation for list items */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.2s ease-out forwards;
+        }
+        
+        /* Glassmorphism utility */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+
+        /* Prevent text selection on long press elements */
+        .no-select {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useCallback, useRef } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { 
+          Wand2, Eraser, Quote, Copy, Check, RotateCcw, Sparkles, Type, Trash2, 
+          ArrowUp, WrapText, User, HelpCircle, X, Zap, MessageSquarePlus, 
+          Layout, Calendar, MousePointer2, Plus, GripHorizontal, Users, FileText,
+          Settings2, Keyboard, ChevronRight, ChevronDown, Edit, Save
+        } from 'lucide-react';
+
+        // --- Helper Components ---
+
+        // Draggable Shape Component
+        const DraggableShape = ({ id, x, y, type, text, isSelected, onMouseDown, onChangeText, onDelete }) => {
+           const style = {
+                left: `${x}px`,
+                top: `${y}px`,
+                position: 'absolute',
+                cursor: 'move',
+            };
+
+            const sizeClass = type === 'square' ? 'w-32 h-32' : 'w-48 h-24';
+            
+            return (
+                <div 
+                    style={style}
+                    onMouseDown={(e) => onMouseDown(e, id)}
+                    className={`${sizeClass} bg-white border-2 ${isSelected ? 'border-amber-500 shadow-xl z-10' : 'border-slate-300 shadow-sm hover:border-amber-300'} rounded-xl flex flex-col p-1 group transition-colors`}
+                >
+                    <div className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                         <button onClick={(e) => { e.stopPropagation(); onDelete(id); }} className="text-slate-400 hover:text-red-500 p-1">
+                            <X size={14} />
+                        </button>
+                    </div>
+                    <textarea 
+                        value={text}
+                        onChange={(e) => onChangeText(id, e.target.value)}
+                        placeholder="輸入文字..."
+                        className="w-full h-full resize-none text-center bg-transparent focus:outline-none text-slate-700 text-sm font-medium placeholder:text-slate-300 leading-tight flex items-center justify-center p-2"
+                        onMouseDown={(e) => e.stopPropagation()} // Prevent drag when clicking text
+                    />
+                </div>
+            );
+        };
+
+        function App() {
+          // --- Main State ---
+          const [mode, setMode] = useState('filter'); // 'filter', 'dialogue', 'voiceover', 'cg'
+          const [showHelp, setShowHelp] = useState(false);
+          const [magicColor, setMagicColor] = useState(null);
+
+          // --- Format Helper State ---
+          const [inputText, setInputText] = useState('');
+          const [outputText, setOutputText] = useState('');
+          const [removeKeywords, setRemoveKeywords] = useState('');
+          const [removeNewlines, setRemoveNewlines] = useState(false);
+          const [autoPunctuate, setAutoPunctuate] = useState(true);
+          const [useTraditionalQuotes, setUseTraditionalQuotes] = useState(true);
+          const [speakerName, setSpeakerName] = useState(''); 
+          const [interleaveText, setInterleaveText] = useState('');
+          const [copied, setCopied] = useState(false);
+
+          // --- CG Helper State ---
+          const [cgTab, setCgTab] = useState('schedule'); // 'schedule', 'whiteboard'
+          
+          // CG Schedule
+          const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+          const [currentMonth, setCurrentMonth] = useState(new Date().getMonth() + 1);
+          const [sundays, setSundays] = useState([]);
+          
+          // Members State
+          const [members, setMembers] = useState(['宇軒', '耕修', '才瑩', '李婕', '修明', '耿輝', '清貴']);
+          const [newMember, setNewMember] = useState('');
+          const [isMemberSettingsOpen, setIsMemberSettingsOpen] = useState(false); // Collapsible state
+          
+          // Picker State
+          const [showMemberPicker, setShowMemberPicker] = useState(false);
+          const [pickerTargetIndex, setPickerTargetIndex] = useState(null);
+          
+          // Shortcuts & Notes
+          const [shortcuts, setShortcuts] = useState(['敬拜團', '音控', '招待', 'PPT', '講員']);
+          const [newShortcut, setNewShortcut] = useState('');
+          const [cgNote, setCgNote] = useState('');
+          
+          // Selection State for Filling
+          const [activeSundayIndex, setActiveSundayIndex] = useState(null);
+
+          // Shortcut Interaction State (Long Press)
+          const [shortcutModal, setShortcutModal] = useState(null); // { idx, text, original }
+          const pressTimer = useRef(null);
+          const isLongPress = useRef(false);
+
+          // CG Whiteboard
+          const [shapes, setShapes] = useState([]);
+          const [selectedShapeId, setSelectedShapeId] = useState(null);
+          const [isDragging, setIsDragging] = useState(false);
+          const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+          const whiteboardRef = useRef(null);
+          const noteTextareaRef = useRef(null);
+
+          // --- Logic: Common & Format Helper ---
+          const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+          const processText = useCallback(() => {
+            if (mode === 'cg') return; 
+
+            if (!inputText) {
+              setOutputText('');
+              return;
+            }
+
+            let result = inputText;
+            let keywordRemovesNewlines = false;
+
+            if (removeKeywords.trim()) {
+              const keywords = removeKeywords.split(/[,，\s]+/).filter(k => k.trim() !== '');
+              keywords.forEach(keyword => {
+                if (keyword === '\\n') {
+                  keywordRemovesNewlines = true;
+                } else {
+                  const regex = new RegExp(escapeRegExp(keyword), 'g');
+                  result = result.replace(regex, '');
+                }
+              });
+            }
+
+            if (keywordRemovesNewlines) result = result.replace(/\n/g, '');
+
+            if (mode === 'filter') {
+              if (removeNewlines && !keywordRemovesNewlines) result = result.replace(/\n/g, '');
+            } else if (mode === 'dialogue') {
+              let trimmed = result.trim();
+              if (autoPunctuate) {
+                const endPunctuation = /[。！？.!?…~]$/;
+                if (!endPunctuation.test(trimmed) && trimmed.length > 0) trimmed += '。';
+                trimmed = trimmed.replace(/\s+/g, '，');
+              }
+              if (trimmed.length > 0) {
+                let content = trimmed;
+                content = useTraditionalQuotes ? `「${trimmed}」` : `"${trimmed}"`;
+                result = speakerName.trim() ? `${speakerName.trim()}：${content}` : content;
+              } else {
+                result = '';
+              }
+            } else if (mode === 'voiceover') {
+              const lines = result.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+              if (lines.length > 0) {
+                const separator = `\n\n${interleaveText || 'super'}\n\n`;
+                result = lines.join(separator);
+              } else {
+                result = '';
+              }
+            }
+            setOutputText(result);
+          }, [inputText, mode, removeKeywords, removeNewlines, autoPunctuate, useTraditionalQuotes, speakerName, interleaveText]);
+
+          useEffect(() => { processText(); }, [processText]);
+
+          const handleCopy = () => {
+            if (!outputText) return;
+            const textArea = document.createElement("textarea");
+            textArea.value = outputText;
+            textArea.style.position = "fixed"; textArea.style.left = "-9999px"; textArea.style.top = "0";
+            document.body.appendChild(textArea); textArea.focus(); textArea.select();
+            try {
+              if (document.execCommand('copy')) {
+                setCopied(true); setTimeout(() => setCopied(false), 2000);
+              }
+            } catch (err) { console.error('Copy failed', err); }
+            document.body.removeChild(textArea);
+          };
+
+          const handleReuse = () => {
+            if (outputText) setInputText(outputText);
+          };
+
+          const handleClear = () => {
+            setInputText(''); setOutputText('');
+          };
+
+          // --- Logic: CG Schedule ---
+          useEffect(() => {
+            const getSundays = (year, month) => {
+                const dates = [];
+                const date = new Date(year, month - 1, 1);
+                while (date.getMonth() === month - 1) {
+                    if (date.getDay() === 0) {
+                        dates.push({
+                            date: `${month}/${date.getDate()}`,
+                            person: ''
+                        });
+                    }
+                    date.setDate(date.getDate() + 1);
+                }
+                return dates;
+            };
+            const newSundays = getSundays(currentYear, currentMonth);
+            
+            setSundays(prev => {
+                if (prev.length === 0) return newSundays;
+                return newSundays.map(ns => {
+                    const found = prev.find(p => p.date === ns.date);
+                    return found ? found : ns;
+                });
+            });
+          }, [currentYear, currentMonth]);
+
+          const handleSundayPersonChange = (index, value) => {
+            const newSundays = [...sundays];
+            newSundays[index].person = value;
+            setSundays(newSundays);
+            setActiveSundayIndex(index); 
+          };
+
+          const openMemberPicker = (index) => {
+              setPickerTargetIndex(index);
+              setActiveSundayIndex(index);
+              setShowMemberPicker(true);
+          };
+
+          const pickMember = (member) => {
+              if (pickerTargetIndex !== null) {
+                  handleSundayPersonChange(pickerTargetIndex, member);
+                  setShowMemberPicker(false);
+              }
+          };
+
+          // Member Management
+          const addMember = () => {
+            if (newMember.trim() && !members.includes(newMember.trim())) {
+                setMembers([...members, newMember.trim()]);
+                setNewMember('');
+            }
+          };
+          const removeMember = (mem) => {
+              setMembers(members.filter(m => m !== mem));
+          };
+
+          // Shortcut Management
+          const addShortcut = () => {
+            if (newShortcut.trim() && !shortcuts.includes(newShortcut.trim())) {
+                setShortcuts([...shortcuts, newShortcut.trim()]);
+                setNewShortcut('');
+            }
+          };
+
+          // NEW: Long Press Handlers
+          const handleShortcutPressStart = (sc, idx) => {
+              isLongPress.current = false;
+              pressTimer.current = setTimeout(() => {
+                  isLongPress.current = true;
+                  setShortcutModal({ idx, text: sc, original: sc });
+                  // Vibration feedback if supported
+                  if (navigator.vibrate) navigator.vibrate(50);
+              }, 600); // 600ms threshold
+          };
+
+          const handleShortcutPressEnd = (sc) => {
+              if (pressTimer.current) {
+                  clearTimeout(pressTimer.current);
+                  pressTimer.current = null;
+              }
+              
+              if (!isLongPress.current) {
+                  // Single click action: Insert text
+                  setCgNote(prev => {
+                      if (!prev) return sc;
+                      return prev.endsWith('\n') || prev.endsWith(' ') ? prev + sc : prev + ' ' + sc;
+                  });
+                  if (noteTextareaRef.current) {
+                      noteTextareaRef.current.focus();
+                  }
+              }
+              // Reset
+              isLongPress.current = false;
+          };
+
+          const handleShortcutPressCancel = () => {
+              if (pressTimer.current) {
+                  clearTimeout(pressTimer.current);
+                  pressTimer.current = null;
+              }
+              isLongPress.current = false;
+          };
+
+          const saveShortcutEdit = () => {
+              if (shortcutModal && shortcutModal.text.trim()) {
+                  const newShortcuts = [...shortcuts];
+                  newShortcuts[shortcutModal.idx] = shortcutModal.text.trim();
+                  setShortcuts(newShortcuts);
+                  setShortcutModal(null);
+              }
+          };
+
+          const deleteShortcutFromModal = () => {
+              if (shortcutModal) {
+                  const newShortcuts = shortcuts.filter((_, i) => i !== shortcutModal.idx);
+                  setShortcuts(newShortcuts);
+                  setShortcutModal(null);
+              }
+          };
+
+          // --- Logic: CG Whiteboard ---
+          const addShape = (type) => {
+              const id = Date.now();
+              const offset = shapes.length * 10;
+              setShapes([...shapes, { id, type, x: 50 + offset, y: 50 + offset, text: '' }]);
+          };
+          const deleteShape = (id) => setShapes(shapes.filter(s => s.id !== id));
+          const updateShapeText = (id, text) => setShapes(shapes.map(s => s.id === id ? { ...s, text } : s));
+          const handleMouseDown = (e, id) => {
+              e.stopPropagation();
+              const shape = shapes.find(s => s.id === id);
+              if (shape) {
+                  setSelectedShapeId(id);
+                  setIsDragging(true);
+                  setDragOffset({ x: e.clientX - shape.x, y: e.clientY - shape.y });
+              }
+          };
+          const handleMouseMove = (e) => {
+              if (isDragging && selectedShapeId) {
+                  setShapes(shapes.map(s => s.id === selectedShapeId ? { ...s, x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y } : s));
+              }
+          };
+          const handleMouseUp = () => setIsDragging(false);
+          useEffect(() => {
+              if (isDragging) {
+                  window.addEventListener('mousemove', handleMouseMove); window.addEventListener('mouseup', handleMouseUp);
+              } else {
+                  window.removeEventListener('mousemove', handleMouseMove); window.removeEventListener('mouseup', handleMouseUp);
+              }
+              return () => { window.removeEventListener('mousemove', handleMouseMove); window.removeEventListener('mouseup', handleMouseUp); };
+          }, [isDragging, selectedShapeId]);
+
+          // --- Theme ---
+          const getThemeColor = () => {
+            if (mode === 'filter') return 'indigo';
+            if (mode === 'dialogue') return 'pink';
+            if (mode === 'voiceover') return 'emerald';
+            if (mode === 'cg') return 'amber';
+            return 'indigo';
+          };
+          const theme = getThemeColor();
+
+          const handleMagicClick = () => {
+            const colors = ['bg-indigo-500', 'bg-pink-500', 'bg-purple-500', 'bg-blue-500', 'bg-teal-500', 'bg-orange-500', 'bg-rose-500', 'bg-cyan-500', 'bg-emerald-500', 'bg-violet-500'];
+            let defaultColor = `bg-${theme}-500`;
+            const currentColor = magicColor || defaultColor;
+            const availableColors = colors.filter(c => c !== currentColor);
+            setMagicColor(availableColors[Math.floor(Math.random() * availableColors.length)]);
+          };
+
+          return (
+            <div className={`min-h-screen bg-gradient-to-br p-4 md:p-8 flex items-center justify-center font-sans relative transition-colors duration-500
+              ${mode === 'filter' ? 'from-indigo-500 via-purple-500 to-pink-500' : ''}
+              ${mode === 'dialogue' ? 'from-pink-500 via-rose-500 to-orange-500' : ''}
+              ${mode === 'voiceover' ? 'from-emerald-500 via-teal-500 to-cyan-500' : ''}
+              ${mode === 'cg' ? 'from-amber-500 via-orange-500 to-yellow-500' : ''}
+            `}>
+              
+              {/* Member Picker Floating Box */}
+              {showMemberPicker && (
+                  <div 
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/10 backdrop-blur-[2px] p-4"
+                    onClick={() => setShowMemberPicker(false)}
+                  >
+                      <div 
+                        className="glass-panel p-6 rounded-2xl shadow-2xl max-w-sm w-full animate-fade-in flex flex-col gap-4 border border-white/60"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                          <div className="flex justify-between items-center border-b border-slate-200/60 pb-3">
+                              <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                                  <Users className="w-5 h-5 text-amber-500"/> 
+                                  選擇負責人
+                              </h3>
+                              <button onClick={() => setShowMemberPicker(false)} className="text-slate-400 hover:text-slate-600">
+                                  <X size={20} />
+                              </button>
+                          </div>
+                          
+                          <div className="grid grid-cols-3 gap-3">
+                              {members.map((mem, idx) => (
+                                  <button
+                                      key={idx}
+                                      onClick={() => pickMember(mem)}
+                                      className="py-3 px-2 bg-white/60 hover:bg-amber-100 hover:text-amber-700 hover:border-amber-200 border border-slate-200 rounded-xl text-slate-700 font-medium transition-all shadow-sm active:scale-95 text-center"
+                                  >
+                                      {mem}
+                                  </button>
+                              ))}
+                          </div>
+                          <div className="text-xs text-center text-slate-400 pt-2 border-t border-slate-200/60">
+                              提示：可在右側選單管理增加新成員
+                          </div>
+                      </div>
+                  </div>
+              )}
+
+              {/* Shortcut Edit Modal */}
+              {shortcutModal && (
+                  <div 
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/10 backdrop-blur-[2px] p-4"
+                    onClick={() => setShortcutModal(null)}
+                  >
+                      <div 
+                        className="glass-panel p-6 rounded-2xl shadow-2xl max-w-xs w-full animate-fade-in flex flex-col gap-4 border border-white/60"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                           <div className="flex justify-between items-center border-b border-slate-200/60 pb-3">
+                              <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                                  <Edit className="w-4 h-4 text-amber-500"/> 
+                                  編輯字詞
+                              </h3>
+                              <button onClick={() => setShortcutModal(null)} className="text-slate-400 hover:text-slate-600">
+                                  <X size={18} />
+                              </button>
+                          </div>
+                          
+                          <input 
+                              type="text" 
+                              value={shortcutModal.text}
+                              onChange={(e) => setShortcutModal({...shortcutModal, text: e.target.value})}
+                              className="w-full px-4 py-2 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-400 text-slate-700"
+                              autoFocus
+                              onKeyDown={(e) => e.key === 'Enter' && saveShortcutEdit()}
+                          />
+                          
+                          <div className="flex gap-2">
+                              <button 
+                                  onClick={deleteShortcutFromModal}
+                                  className="flex-1 py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-1"
+                              >
+                                  <Trash2 size={14} /> 刪除
+                              </button>
+                              <button 
+                                  onClick={saveShortcutEdit}
+                                  className="flex-1 py-2 bg-amber-500 text-white hover:bg-amber-600 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-1"
+                              >
+                                  <Save size={14} /> 儲存
+                              </button>
+                          </div>
+                      </div>
+                  </div>
+              )}
+
+              {/* Help Modal */}
+              {showHelp && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/20 backdrop-blur-sm animate-in fade-in duration-200">
+                  <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
+                    <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                      <h2 className="text-xl font-bold text-slate-700 flex items-center gap-2">
+                        <Sparkles className="w-5 h-5 text-indigo-500" />
+                        功能使用指南
+                      </h2>
+                      <button onClick={() => setShowHelp(false)} className="p-2 hover:bg-slate-200 rounded-full text-slate-500"><X className="w-5 h-5" /></button>
+                    </div>
+                    <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
+                      <div className="space-y-3">
+                        <h3 className="font-bold text-amber-600 flex items-center gap-2"><Layout className="w-4 h-4" /> CG 小幫手</h3>
+                        <p className="text-sm text-slate-600">
+                           <span className="font-semibold">快捷筆記：</span> 
+                           <ul className="list-disc list-inside pl-2 mt-1">
+                               <li><span className="text-slate-800">單擊</span> 字詞：<span className="text-amber-600 font-bold">立即</span>加入下方筆記區。</li>
+                               <li><span className="text-slate-800">長按</span> 字詞：編輯或刪除該字詞。</li>
+                           </ul>
+                           <br/>
+                           <span className="font-semibold">管理設定：</span> 右下角點擊標題可展開/收合人員名單設定。
+                        </p>
+                      </div>
+                    </div>
+                    <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-center">
+                      <button onClick={() => setShowHelp(false)} className="px-6 py-2 bg-slate-800 text-white rounded-xl text-sm font-medium hover:bg-slate-700">開始使用</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Main Card */}
+              <div className="w-full max-w-6xl bg-white/90 backdrop-blur-xl shadow-2xl rounded-3xl overflow-hidden border border-white/50 flex flex-col md:flex-row min-h-[600px]">
+                
+                {/* Sidebar */}
+                <div className="w-full md:w-64 bg-slate-50/80 p-6 flex flex-col border-r border-slate-200/60">
+                  <div className={`flex items-center gap-2 mb-8 text-${theme}-600 transition-colors duration-500`}>
+                    <Sparkles className="w-6 h-6 animate-pulse" />
+                    <h1 className="text-xl font-bold tracking-tight">格式小幫手</h1>
+                  </div>
+
+                  <nav className="flex flex-col gap-3 space-y-1">
+                    {[
+                        { id: 'filter', icon: Eraser, label: '格式淨化', color: 'indigo' },
+                        { id: 'dialogue', icon: Quote, label: '口白生成', color: 'pink' },
+                        { id: 'voiceover', icon: MessageSquarePlus, label: '補口白', color: 'emerald' },
+                        { id: 'cg', icon: Layout, label: 'CG 小幫手', color: 'amber' },
+                    ].map(item => (
+                        <button
+                          key={item.id}
+                          onClick={() => setMode(item.id)}
+                          className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 text-left ${
+                            mode === item.id
+                              ? `bg-${item.color}-600 text-white shadow-lg shadow-${item.color}-200 scale-105`
+                              : 'hover:bg-white text-slate-600 hover:shadow-sm'
+                          }`}
+                        >
+                          <item.icon className="w-5 h-5" />
+                          <span className="font-medium">{item.label}</span>
+                        </button>
+                    ))}
+                    <button onClick={() => setShowHelp(true)} className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white text-slate-600 hover:shadow-sm transition-all duration-300 text-left mt-2">
+                      <HelpCircle className="w-5 h-5" />
+                      <span className="font-medium">使用說明</span>
+                    </button>
+                  </nav>
+
+                  <div className="mt-auto pt-6 border-t border-slate-200">
+                    <p className="text-xs text-slate-400 text-center">Vibe Coding Edition <br/> Made with ✨</p>
+                  </div>
+                </div>
+
+                {/* Main Content Area */}
+                <div className="flex-1 p-6 md:p-8 flex flex-col gap-6 overflow-y-auto relative">
+                  
+                  {/* === CG Helper Mode === */}
+                  {mode === 'cg' ? (
+                    <div className="flex flex-col h-full gap-4">
+                        {/* CG Tab Switcher */}
+                        <div className="flex bg-slate-100 p-1 rounded-xl self-start">
+                            <button 
+                                onClick={() => setCgTab('schedule')}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${cgTab === 'schedule' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                <span className="flex items-center gap-2"><Calendar size={16}/> 班表小幫手</span>
+                            </button>
+                            <button 
+                                onClick={() => setCgTab('whiteboard')}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${cgTab === 'whiteboard' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                <span className="flex items-center gap-2"><MousePointer2 size={16}/> 場地示意圖</span>
+                            </button>
+                        </div>
+
+                        {/* CG Schedule Content */}
+                        {cgTab === 'schedule' && (
+                            <div className="flex flex-col md:flex-row gap-6 h-full">
+                                
+                                {/* Left Column: Date List */}
+                                <div className="flex-1 bg-amber-50/50 border border-amber-100 rounded-2xl p-4 flex flex-col gap-4">
+                                     <div className="flex items-center gap-4 bg-white p-3 rounded-xl border border-amber-100 shadow-sm">
+                                        <div className="flex items-center gap-2">
+                                            <input 
+                                                type="number" 
+                                                value={currentYear} 
+                                                onChange={(e) => setCurrentYear(Number(e.target.value))}
+                                                className="w-20 px-2 py-1.5 rounded-lg border border-slate-200 text-center bg-slate-50 text-slate-700 focus:border-amber-400 outline-none"
+                                            />
+                                            <span className="font-bold text-slate-300">/</span>
+                                            <input 
+                                                type="number" 
+                                                value={currentMonth} 
+                                                min="1" max="12"
+                                                onChange={(e) => setCurrentMonth(Number(e.target.value))}
+                                                className="w-16 px-2 py-1.5 rounded-lg border border-slate-200 text-center bg-slate-50 text-slate-700 focus:border-amber-400 outline-none"
+                                            />
+                                        </div>
+                                        <span className="text-sm font-medium text-amber-600">週日班表</span>
+                                    </div>
+
+                                    <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
+                                        {sundays.map((sunday, idx) => (
+                                            <div 
+                                                key={idx} 
+                                                className={`flex items-center gap-3 p-3 rounded-xl border transition-all duration-200 ${activeSundayIndex === idx ? 'bg-white border-amber-400 shadow-md transform scale-[1.01]' : 'bg-white/60 border-amber-100 hover:border-amber-200'}`}
+                                            >
+                                                <div className="w-14 flex flex-col items-center justify-center bg-amber-100 rounded-lg py-1">
+                                                    <span className="text-xs text-amber-600 font-bold uppercase">Sun</span>
+                                                    <span className="text-lg font-bold text-amber-700 leading-none">{sunday.date.split('/')[1]}</span>
+                                                </div>
+                                                <div className="flex-1 relative">
+                                                    <input 
+                                                        type="text" 
+                                                        value={sunday.person}
+                                                        onChange={(e) => handleSundayPersonChange(idx, e.target.value)}
+                                                        onClick={() => openMemberPicker(idx)}
+                                                        placeholder="點此選擇或輸入負責人..."
+                                                        className="w-full bg-transparent outline-none text-slate-700 placeholder:text-slate-300 h-full py-2 cursor-pointer"
+                                                    />
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Right Column: Tools */}
+                                <div className="w-full md:w-80 flex flex-col gap-4">
+                                    
+                                    {/* Merged Shortcuts & Input Area */}
+                                    <div className="flex-1 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-3 min-h-[300px]">
+                                        <div className="flex justify-between items-center">
+                                             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                                                <Keyboard size={14} /> 快速筆記板
+                                            </label>
+                                            <div className="flex gap-1">
+                                                <input 
+                                                    type="text" 
+                                                    value={newShortcut}
+                                                    onChange={(e) => setNewShortcut(e.target.value)}
+                                                    placeholder="新詞彙..."
+                                                    className="w-20 px-2 py-0.5 text-xs bg-slate-50 rounded border border-slate-200 focus:outline-none focus:border-amber-400"
+                                                    onKeyDown={(e) => e.key === 'Enter' && addShortcut()}
+                                                />
+                                                <button onClick={addShortcut} className="p-0.5 bg-amber-100 text-amber-600 rounded hover:bg-amber-200"><Plus size={14}/></button>
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Shortcut Chips */}
+                                        <div className="flex flex-wrap gap-2 pb-3 border-b border-slate-100">
+                                            {shortcuts.map((sc, idx) => (
+                                                <button 
+                                                    key={idx}
+                                                    onPointerDown={() => handleShortcutPressStart(sc, idx)}
+                                                    onPointerUp={() => handleShortcutPressEnd(sc)}
+                                                    onPointerLeave={handleShortcutPressCancel}
+                                                    className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg text-xs font-medium transition-colors border border-amber-100 active:scale-95 select-none no-select"
+                                                    title="單擊加入，長按編輯"
+                                                >
+                                                    {sc}
+                                                </button>
+                                            ))}
+                                            {shortcuts.length === 0 && <span className="text-xs text-slate-300 italic">無快捷詞，請由右上方新增</span>}
+                                        </div>
+
+                                        {/* Main Input Area */}
+                                        <textarea 
+                                            ref={noteTextareaRef}
+                                            value={cgNote}
+                                            onChange={(e) => setCgNote(e.target.value)}
+                                            className="flex-1 w-full resize-none bg-slate-50 p-3 rounded-lg text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-200/50 transition-all placeholder:text-slate-300"
+                                            placeholder="點擊上方按鈕快速填寫，或直接在此輸入..."
+                                        />
+                                    </div>
+
+                                    {/* Members Management (Collapsible) */}
+                                    <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden transition-all duration-300">
+                                        <button 
+                                            onClick={() => setIsMemberSettingsOpen(!isMemberSettingsOpen)}
+                                            className="w-full flex items-center justify-between p-3 text-slate-500 hover:bg-slate-100 transition-colors"
+                                        >
+                                            <label className="text-xs font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer">
+                                                <Settings2 size={14} /> 班表選單管理
+                                            </label>
+                                            {isMemberSettingsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                        </button>
+                                        
+                                        {isMemberSettingsOpen && (
+                                            <div className="p-3 pt-0 animate-fade-in">
+                                                <div className="flex flex-wrap gap-1 mb-2">
+                                                    {members.map((mem, idx) => (
+                                                        <div key={idx} className="group relative">
+                                                            <span className="px-2 py-1 bg-white text-slate-600 rounded text-xs border border-slate-200 inline-block">
+                                                                {mem}
+                                                            </span>
+                                                            <button 
+                                                                onClick={() => removeMember(mem)}
+                                                                className="absolute -top-1 -right-1 bg-slate-200 text-slate-500 hover:text-red-500 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                            >
+                                                                <X size={8} />
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <input 
+                                                        type="text" 
+                                                        value={newMember}
+                                                        onChange={(e) => setNewMember(e.target.value)}
+                                                        placeholder="新增人名..."
+                                                        className="flex-1 px-2 py-1 text-xs bg-white rounded border border-slate-200 focus:outline-none focus:border-indigo-400"
+                                                        onKeyDown={(e) => e.key === 'Enter' && addMember()}
+                                                    />
+                                                    <button onClick={addMember} className="p-1 bg-indigo-500 text-white rounded hover:bg-indigo-600"><Plus size={14}/></button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                </div>
+                            </div>
+                        )}
+
+                        {/* CG Whiteboard Content */}
+                        {cgTab === 'whiteboard' && (
+                            <div className="flex flex-col h-full relative">
+                                <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 bg-white/90 backdrop-blur p-2 rounded-xl shadow-lg border border-slate-100">
+                                    <button onClick={() => addShape('square')} className="p-2 hover:bg-amber-50 text-slate-600 hover:text-amber-600 rounded-lg transition-colors flex flex-col items-center gap-1">
+                                        <div className="w-6 h-6 border-2 border-current rounded-md"></div>
+                                        <span className="text-[10px]">正方形</span>
+                                    </button>
+                                    <button onClick={() => addShape('rectangle')} className="p-2 hover:bg-amber-50 text-slate-600 hover:text-amber-600 rounded-lg transition-colors flex flex-col items-center gap-1">
+                                        <div className="w-8 h-4 border-2 border-current rounded-md mt-1 mb-1"></div>
+                                        <span className="text-[10px]">長方形</span>
+                                    </button>
+                                    <div className="h-px bg-slate-200 my-1"></div>
+                                    <button onClick={() => setShapes([])} className="p-2 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-lg transition-colors" title="清空畫布">
+                                        <Trash2 size={16} />
+                                    </button>
+                                </div>
+
+                                <div 
+                                    ref={whiteboardRef}
+                                    className="flex-1 bg-slate-50 rounded-2xl border border-slate-200 relative overflow-hidden cursor-crosshair"
+                                    onClick={() => setSelectedShapeId(null)} // Deselect on clicking background
+                                    style={{
+                                        backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)',
+                                        backgroundSize: '20px 20px'
+                                    }}
+                                >
+                                    {shapes.length === 0 && (
+                                        <div className="absolute inset-0 flex items-center justify-center text-slate-300 pointer-events-none">
+                                            <span className="flex items-center gap-2"><MousePointer2 size={20}/> 從左側拖拉方塊開始佈置</span>
+                                        </div>
+                                    )}
+                                    {shapes.map(shape => (
+                                        <DraggableShape 
+                                            key={shape.id} 
+                                            {...shape} 
+                                            isSelected={selectedShapeId === shape.id}
+                                            onMouseDown={handleMouseDown}
+                                            onChangeText={updateShapeText}
+                                            onDelete={deleteShape}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                  ) : (
+                    // === Standard Modes (Filter, Dialogue, Voiceover) ===
+                    <>
+                      <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+                        {mode === 'filter' && (
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                               <label className="text-sm font-semibold text-slate-500 flex items-center gap-2">
+                                <Trash2 className="w-4 h-4" />
+                                自訂移除字詞
+                              </label>
+                              <button
+                                onClick={() => setRemoveNewlines(!removeNewlines)}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 border ${
+                                  removeNewlines ? 'bg-indigo-100 text-indigo-700 border-indigo-200 shadow-sm' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                }`}
+                              >
+                                <WrapText className="w-3.5 h-3.5" />
+                                {removeNewlines ? '已啟用：移除換行' : '移除換行符號'}
+                              </button>
+                            </div>
+                            <input type="text" value={removeKeywords} onChange={(e) => setRemoveKeywords(e.target.value)} placeholder="輸入要刪除的文字，用逗號分隔..." className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all text-slate-700 placeholder:text-slate-400" />
+                            <p className="text-xs text-slate-400">例如輸入：然後, 其實, 喔</p>
+                          </div>
+                        )}
+                        {mode === 'dialogue' && (
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between"><span className="text-sm font-semibold text-slate-500 flex items-center gap-2"><Wand2 className="w-4 h-4" /> 魔法設定</span></div>
+                            <div className="flex flex-wrap gap-4">
+                              <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-1.5 rounded-lg hover:bg-slate-50"><input type="checkbox" checked={autoPunctuate} onChange={(e) => setAutoPunctuate(e.target.checked)} className="w-4 h-4 accent-pink-500 rounded" /><span className="text-sm text-slate-600">自動補全結尾標點</span></label>
+                              <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-1.5 rounded-lg hover:bg-slate-50"><input type="checkbox" checked={useTraditionalQuotes} onChange={(e) => setUseTraditionalQuotes(e.target.checked)} className="w-4 h-4 accent-pink-500 rounded" /><span className="text-sm text-slate-600">使用直角引號 「」</span></label>
+                            </div>
+                            <div className="pt-3 border-t border-slate-100 mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div><label className="text-sm font-semibold text-slate-500 flex items-center gap-2 mb-2"><User className="w-4 h-4" /> 語者標記</label><input type="text" value={speakerName} onChange={(e) => setSpeakerName(e.target.value)} placeholder="例如：旁白、小明..." className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-pink-500/50 transition-all text-slate-700 placeholder:text-slate-400" /></div>
+                              <div><label className="text-sm font-semibold text-slate-500 flex items-center gap-2 mb-2"><Trash2 className="w-4 h-4" /> 同時移除字詞</label><input type="text" value={removeKeywords} onChange={(e) => setRemoveKeywords(e.target.value)} placeholder="逗號分隔..." className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-pink-500/50 transition-all text-slate-700 placeholder:text-slate-400" /></div>
+                            </div>
+                          </div>
+                        )}
+                        {mode === 'voiceover' && (
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between"><span className="text-sm font-semibold text-slate-500 flex items-center gap-2"><MessageSquarePlus className="w-4 h-4" /> 插入設定</span></div>
+                            <div className="grid grid-cols-1 gap-4">
+                              <div>
+                                <label className="text-sm font-semibold text-slate-500 flex items-center gap-2 mb-2"><Type className="w-4 h-4" /> 加入super</label>
+                                <input type="text" value={interleaveText} onChange={(e) => setInterleaveText(e.target.value)} placeholder="" className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all text-slate-700 placeholder:text-slate-400" />
+                                <p className="text-xs text-slate-400 mt-1">系統將自動在插入文字前後保留空行。</p>
+                              </div>
+                              <div className="pt-3 border-t border-slate-100"><label className="text-sm font-semibold text-slate-500 flex items-center gap-2 mb-2"><Trash2 className="w-4 h-4" /> 同時移除字詞</label><input type="text" value={removeKeywords} onChange={(e) => setRemoveKeywords(e.target.value)} placeholder="逗號分隔..." className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all text-slate-700 placeholder:text-slate-400" /></div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Input Area */}
+                      <div className="flex-1 flex flex-col gap-2">
+                        <div className="flex justify-between items-end px-1">
+                          <label className="text-sm font-semibold text-slate-500 flex items-center gap-2"><Type className="w-4 h-4" /> 原始文字</label>
+                          <button onClick={handleClear} className="text-xs text-slate-400 hover:text-red-400 flex items-center gap-1 transition-colors"><RotateCcw className="w-3 h-3" /> 清除</button>
+                        </div>
+                        <textarea value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="在此輸入或貼上文字..." className={`flex-1 w-full min-h-[150px] p-4 rounded-2xl bg-slate-50/50 border border-slate-200 focus:outline-none focus:ring-2 resize-none transition-all text-slate-700 placeholder:text-slate-300 ${mode === 'filter' ? 'focus:ring-indigo-500/30' : ''} ${mode === 'dialogue' ? 'focus:ring-pink-500/30' : ''} ${mode === 'voiceover' ? 'focus:ring-emerald-500/30' : ''}`} />
+                      </div>
+
+                      {/* Magic Button */}
+                      <div className="flex justify-center -my-2 z-10">
+                        <button onClick={handleMagicClick} className={`p-2 rounded-full shadow-sm text-white transition-all duration-500 hover:scale-110 active:scale-95 cursor-pointer ${magicColor ? magicColor : (mode === 'filter' ? 'bg-indigo-500' : mode === 'dialogue' ? 'bg-pink-500' : 'bg-emerald-600')}`} title="點我變色！"><Wand2 className="w-5 h-5" /></button>
+                      </div>
+
+                      {/* Output Area */}
+                      <div className="flex-1 flex flex-col gap-2 relative group">
+                        <div className="flex justify-between items-end px-1">
+                          <label className="text-sm font-semibold text-slate-500">轉換結果</label>
+                          <div className="flex gap-2">
+                            <button onClick={handleReuse} disabled={!outputText} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-300 ${!outputText ? 'opacity-0 pointer-events-none' : `bg-${theme}-50 text-${theme}-600 hover:bg-${theme}-100 border border-${theme}-200`}`} title="將結果設為輸入，以便進行二次處理"><ArrowUp className="w-3 h-3" /> 繼續處理</button>
+                            <button onClick={handleCopy} disabled={!outputText} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-300 ${copied ? 'bg-green-500 text-white' : outputText ? 'bg-slate-800 text-white hover:bg-slate-700 hover:shadow-lg' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>{copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}{copied ? '已複製！' : '複製結果'}</button>
+                          </div>
+                        </div>
+                        <div className={`relative flex-1 w-full min-h-[150px] p-4 rounded-2xl border transition-all duration-500 flex items-start ${mode === 'filter' ? 'bg-indigo-50/30 border-indigo-100 text-indigo-900' : mode === 'dialogue' ? 'bg-pink-50/30 border-pink-100 text-pink-900' : 'bg-emerald-50/30 border-emerald-100 text-emerald-900'}`}>{outputText ? <p className="whitespace-pre-wrap leading-relaxed">{outputText}</p> : <span className="text-slate-300 italic select-none">等待輸入...</span>}</div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
